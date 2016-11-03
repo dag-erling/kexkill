@@ -1,0 +1,12 @@
+The kexkill utility connects to an SSH server and sends a stream of
+KEXINIT packets.  This may cause certain versions of OpenSSH to
+consume significant amounts of memory.  See CVE-2016-8858 for
+additional details.
+
+The latest version of the source code is available from Github:
+
+  https://github.com/dag-erling/kexkill
+
+Bugs can be reported as issues in Github:
+
+  https://github.com/dag-erling/kexkill/issues
