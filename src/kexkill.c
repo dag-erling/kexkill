@@ -132,6 +132,34 @@ kk_close(struct kk_conn *conn)
 	conn->state = kk_closed;
 }
 
+static void
+kk_hup(struct kk_conn *conn)
+{
+
+	if (verbose)
+		warnx("[%02x] connection lost", conn->fd);
+	kk_close(conn);
+}
+
+static int
+kk_read(struct kk_conn *conn)
+{
+	ssize_t rlen;
+	size_t len;
+
+	if (conn->buflen == sizeof conn->buf) {
+		warnx("[%02x] buffer full", conn->fd);
+		return (-1);
+	}
+	len = sizeof conn->buf - conn->buflen;
+	if ((rlen = read(conn->fd, conn->buf, len)) < 0) {
+		warn("[%02x] read()", conn->fd);
+		return (-1);
+	}
+	conn->buflen += rlen;
+	return (0);
+}
+
 static int
 kk_write(struct kk_conn *conn, const void *data, size_t len)
 {
@@ -156,21 +184,12 @@ static int
 kk_input(struct kk_conn *conn)
 {
 	char *eom, *eop;
-	ssize_t rlen;
 	size_t len;
 
 	if (verbose > 1)
 		warnx("[%02x] %s()", conn->fd, __func__);
-	if (conn->buflen == sizeof conn->buf) {
-		warnx("[%02x] buffer full", conn->fd);
+	if (kk_read(conn) != 0)
 		goto fail;
-	}
-	len = sizeof conn->buf - conn->buflen;
-	if ((rlen = read(conn->fd, conn->buf, len)) < 0) {
-		warn("[%02x] read()", conn->fd);
-		goto fail;
-	}
-	conn->buflen += rlen;
 	eom = conn->buf + conn->buflen;
 	switch (conn->state) {
 	case kk_connected:
@@ -302,9 +321,7 @@ kexkill(struct sockaddr *sa, socklen_t salen)
 			if (pfd[i].fd == 0)
 				continue;
 			if (pfd[i].revents & (POLLERR|POLLHUP)) {
-				if (verbose)
-					warnx("[%02x] connection closed", pfd[i].fd);
-				kk_close(&conns[i]);
+				kk_hup(&conns[i]);
 				continue;
 			}
 			if (pfd[i].revents & POLLIN)
