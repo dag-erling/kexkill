@@ -40,6 +40,7 @@
 #include <errno.h>
 #include <netdb.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -364,6 +365,8 @@ main(int argc, char *argv[])
 
 	if ((conns = calloc(maxconns, sizeof *conns)) == NULL)
 		err(1, "calloc()");
+
+	signal(SIGPIPE, SIG_IGN);
 
 	memset(&hints, 0, sizeof hints);
 	hints.ai_socktype = SOCK_STREAM;
