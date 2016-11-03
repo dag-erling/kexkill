@@ -320,13 +320,11 @@ kexkill(struct sockaddr *sa, socklen_t salen)
 		for (i = 0; i < maxconns; ++i) {
 			if (pfd[i].fd == 0)
 				continue;
-			if (pfd[i].revents & (POLLERR|POLLHUP)) {
+			else if (pfd[i].revents & (POLLERR|POLLHUP))
 				kk_hup(&conns[i]);
-				continue;
-			}
-			if (pfd[i].revents & POLLIN)
+			else if (pfd[i].revents & POLLIN)
 				kk_input(&conns[i]);
-			if (pfd[i].revents & POLLOUT)
+			else if (pfd[i].revents & POLLOUT)
 				kk_output(&conns[i]);
 		}
 	}
