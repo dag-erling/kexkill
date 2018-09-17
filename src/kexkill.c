@@ -36,6 +36,7 @@
 
 #include <netinet/in.h>
 
+#include <ctype.h>
 #include <err.h>
 #include <errno.h>
 #include <netdb.h>
@@ -94,6 +95,37 @@ static char kexinit[] =
     "";
 
 static int verbose;
+
+/*
+ * Print out the contents of a buffer in hex.
+ */
+static void
+hexdump(const void *vbuf, size_t len)
+{
+	const unsigned char *buf;
+	unsigned int pos, i;
+
+	buf = vbuf;
+	pos = 0;
+	while (len > 0) {
+		fprintf(stderr, "%04x |", pos);
+		for (i = 0; i < 16 && i < len; ++i)
+			fprintf(stderr, " %02x", buf[i]);
+		for (; i < 16; ++i)
+			fprintf(stderr, "   ");
+		fprintf(stderr, " | ");
+		for (i = 0; i < 16 && i < len; ++i)
+			fprintf(stderr, "%c", isprint(buf[i]) ? buf[i] : '.');
+		for (; i < 16; ++i)
+			fprintf(stderr, " ");
+		fprintf(stderr, "\n");
+		if (len < 16)
+			break;
+		len -= 16;
+		pos += 16;
+		buf += 16;
+	}
+}
 
 /*
  * Connect to a target.
@@ -173,6 +205,8 @@ kk_read(struct kk_conn *conn)
 			warn("[%02x] read()", conn->fd);
 		return (-1);
 	}
+	if (verbose > 2)
+		hexdump(buf, (size_t)rlen);
 	conn->buflen += rlen;
 	return (0);
 }
@@ -196,6 +230,8 @@ kk_write(struct kk_conn *conn, const void *data, size_t len)
 		}
 		if (verbose > 1)
 			warnx("[%02x] wrote %zu bytes", conn->fd, wlen);
+		if (verbose > 2)
+			hexdump(buf, (size_t)wlen);
 		buf += wlen;
 		len -= wlen;
 	}
