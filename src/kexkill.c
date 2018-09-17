@@ -282,7 +282,7 @@ kk_input(struct kk_conn *conn)
 		len =
 		    (uint8_t)conn->buf[0] << 24 |
 		    (uint8_t)conn->buf[1] << 16 |
-		    (uint8_t)conn->buf[2] << 8  |
+		    (uint8_t)conn->buf[2] << 8	|
 		    (uint8_t)conn->buf[3];
 		if (len + 4 > sizeof conn->buf) {
 			warnx("[%02x] oversize packet (%zu bytes)", conn->fd, len);
@@ -359,7 +359,8 @@ static int
 kexkill(struct sockaddr *sa, socklen_t salen)
 {
 	struct pollfd *pfd;
-	int i, k, n, ret;
+	unsigned int i, k, n;
+	int ret;
 
 	if ((pfd = calloc(maxconns, sizeof *pfd)) == NULL)
 		err(1, "calloc()");
