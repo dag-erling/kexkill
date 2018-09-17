@@ -156,6 +156,7 @@ kk_hup(struct kk_conn *conn)
 static int
 kk_read(struct kk_conn *conn)
 {
+	unsigned char *buf;
 	ssize_t rlen;
 	size_t len;
 
@@ -163,9 +164,13 @@ kk_read(struct kk_conn *conn)
 		warnx("[%02x] buffer full", conn->fd);
 		return (-1);
 	}
+	buf = (unsigned char *)conn->buf + conn->buflen;
 	len = sizeof conn->buf - conn->buflen;
-	if ((rlen = read(conn->fd, conn->buf, len)) < 0) {
-		warn("[%02x] read()", conn->fd);
+	if (verbose)
+		warnx("[%02x] reading up to %zu bytes", conn->fd, len);
+	if ((rlen = read(conn->fd, buf, len)) < 0) {
+		if (verbose > 1)
+			warn("[%02x] read()", conn->fd);
 		return (-1);
 	}
 	conn->buflen += rlen;
@@ -178,18 +183,20 @@ kk_read(struct kk_conn *conn)
 static int
 kk_write(struct kk_conn *conn, const void *data, size_t len)
 {
+	const unsigned char *buf;
 	ssize_t wlen;
 
 	if (verbose > 1)
 		warnx("[%02x] %s(%zu)", conn->fd, __func__, len);
+	buf = (const unsigned char *)data;
 	while (len > 0) {
-		if ((wlen = write(conn->fd, data, len)) < 0) {
+		if ((wlen = write(conn->fd, buf, len)) < 0) {
 			warn("[%02x] write()", conn->fd);
 			return (-1);
 		}
 		if (verbose > 1)
-			warnx("[%02x] wrote %zu bytes", conn->fd, len);
-		data = (const char *)data + wlen;
+			warnx("[%02x] wrote %zu bytes", conn->fd, wlen);
+		buf += wlen;
 		len -= wlen;
 	}
 	return (0);
